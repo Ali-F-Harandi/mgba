@@ -1614,7 +1614,7 @@ static void autoload_get_self_dir(char *out, size_t out_size)
 {
    out[0] = '\0';
 #ifdef _WIN32
-   void *hm = NULL;
+   HMODULE hm = NULL;
    char path[AUTOLOAD_MAX_PATH];
    char *slash;
    if (!GetModuleHandleExA(
@@ -1645,7 +1645,7 @@ static void autoload_get_self_name(char *out, size_t out_size)
 {
    out[0] = '\0';
 #ifdef _WIN32
-   void *hm = NULL;
+   HMODULE hm = NULL;
    char path[AUTOLOAD_MAX_PATH];
    char *slash, *dot, *base;
    if (!GetModuleHandleExA(
@@ -1760,7 +1760,7 @@ static void autoload_log_rotate(int keep_runs)
 }
 
 /* ---- tiny "key = value" config parser ------------------------------- */
-struct autoload_config
+typedef struct
 {
    bool enabled;
    int  num_paths;
@@ -1769,7 +1769,7 @@ struct autoload_config
    int  num_state_exts;
    char state_exts[16][64];
    int  current_slot;
-};
+} autoload_config;
 
 static void autoload_trim(char *s)
 {
@@ -2188,7 +2188,8 @@ static bool cheats_parse_line(const char *line, cheat_entry *out_entry)
    char *eq, *p, *endptr;
    long  addr_l, val_l;
 
-   strlcpy(buf, line, sizeof(buf));
+   strncpy(buf, line, sizeof(buf) - 1);
+   buf[sizeof(buf) - 1] = '\0';
    autoload_trim(buf);
 
    eq = strchr(buf, '=');
