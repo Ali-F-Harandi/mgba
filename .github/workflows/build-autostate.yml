@@ -49,9 +49,7 @@ jobs:
       - name: Build
         run: |
           make -f Makefile.libretro \
-               platform=mingw_x86_64 \
-               CC=x86_64-w64-mingw32-gcc \
-               CXX=x86_64-w64-mingw32-g++ \
+               platform=windows_x86_64 \
                -j$(nproc)
 
       - name: Stage artifact
@@ -93,9 +91,7 @@ jobs:
       - name: Build
         run: |
           make -f Makefile.libretro \
-               platform=mingw_x86 \
-               CC=i686-w64-mingw32-gcc \
-               CXX=i686-w64-mingw32-g++ \
+               platform=windows_x86 \
                -j$(nproc)
 
       - name: Stage artifact
