@@ -1575,9 +1575,8 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
 #define AUTOLOAD_STRCASECMP strcasecmp
 #define AUTOLOAD_PATH_SEP   '/'
 #define AUTOLOAD_MAX_PATH   4096
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
+/* mGBA's Makefile.libretro already defines _GNU_SOURCE, so Dl_info and
+ * dladdr() are available. We just need <dlfcn.h>. */
 #include <dlfcn.h>
 #endif
 
