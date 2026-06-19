@@ -13,6 +13,10 @@
 # GitHub Actions run page without needing a release.
 #
 # Trigger: every push and pull-request, plus manual dispatch.
+#
+# NOTE: mGBA has pre-existing build issues on some platforms that require
+# workarounds in the build command (see comments below). These are NOT
+# caused by our patch - they exist in upstream mGBA's libretro build.
 
 name: Build mGBA autostate
 
@@ -29,6 +33,13 @@ permissions:
 jobs:
   # ------------------------------------------------------------------ #
   # Windows 64-bit (MinGW cross-compile)                               #
+  #                                                                    #
+  # mGBA has a pre-existing issue where thread.c references            #
+  # mCoreRewind* and gba/core.c references mVideoThreadProxyCreate     #
+  # functions that are not compiled in the libretro build. We work     #
+  # around this by defining DISABLE_THREADING, which skips the         #
+  # problematic calls in gba/core.c, and by compiling rewind.c         #
+  # separately to fix the link errors.                                 #
   # ------------------------------------------------------------------ #
   build-win64:
     name: Windows x64 (MinGW)
@@ -48,14 +59,44 @@ jobs:
 
       - name: Build
         run: |
+          # Build with DISABLE_THREADING to skip mVideoThreadProxyCreate
+          # calls, and add rewind.c to the build to fix mCoreRewind* errors.
           make -f Makefile.libretro \
-               platform=windows_x86_64 \
-               -j$(nproc)
+               platform=mingw_x86_64 \
+               CC=x86_64-w64-mingw32-gcc \
+               CXX=x86_64-w64-mingw32-g++ \
+               CFLAGS="-DDISABLE_THREADING" \
+               LDFLAGS="-lm" \
+               -j$(nproc) || true
+
+          # If first build failed, compile rewind.c separately and retry
+          if [ ! -f mgba_libretro.mingw_x86_64.dll ]; then
+            echo "First build failed, compiling rewind.c separately..."
+            x86_64-w64-mingw32-gcc -c \
+              -D__LIBRETRO__ -DMINIMAL_CORE=2 -DM_CORE_GBA -DM_CORE_GB \
+              -DENABLE_VFS -DENABLE_DIRECTORIES -DHAVE_STDINT_H -DHAVE_INTTYPES_H \
+              -DINLINE=inline -DCOLOR_16_BIT -DRESAMPLE_LIBRARY=2 \
+              -DM_PI=3.14159265358979323846 -DMGBA_STANDALONE -DPATH_MAX=4096 \
+              -DNDEBUG -DCOLOR_5_6_5 -DENABLE_VFS_FD -DDISABLE_THREADING \
+              -I./src -I./src/arm -I./include -I./src/platform/libretro \
+              -o src/core/rewind.mingw_x86_64.o src/core/rewind.c
+            make -f Makefile.libretro \
+                 platform=mingw_x86_64 \
+                 CC=x86_64-w64-mingw32-gcc \
+                 CXX=x86_64-w64-mingw32-g++ \
+                 CFLAGS="-DDISABLE_THREADING" \
+                 -j$(nproc)
+          fi
 
       - name: Stage artifact
         run: |
           mkdir -p dist
-          cp mgba_libretro.dll dist/mgba_libretro_win64.dll
+          DLL=$(find . -name "mgba_libretro*.dll" -type f | head -1)
+          if [ -z "$DLL" ]; then
+            echo "ERROR: No DLL was built"
+            exit 1
+          fi
+          cp "$DLL" dist/mgba_libretro_win64.dll
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -91,13 +132,39 @@ jobs:
       - name: Build
         run: |
           make -f Makefile.libretro \
-               platform=windows_x86 \
-               -j$(nproc)
+               platform=mingw_x86 \
+               CC=i686-w64-mingw32-gcc \
+               CXX=i686-w64-mingw32-g++ \
+               CFLAGS="-DDISABLE_THREADING" \
+               -j$(nproc) || true
+
+          if [ ! -f mgba_libretro.mingw_x86.dll ]; then
+            echo "First build failed, compiling rewind.c separately..."
+            i686-w64-mingw32-gcc -c \
+              -D__LIBRETRO__ -DMINIMAL_CORE=2 -DM_CORE_GBA -DM_CORE_GB \
+              -DENABLE_VFS -DENABLE_DIRECTORIES -DHAVE_STDINT_H -DHAVE_INTTYPES_H \
+              -DINLINE=inline -DCOLOR_16_BIT -DRESAMPLE_LIBRARY=2 \
+              -DM_PI=3.14159265358979323846 -DMGBA_STANDALONE -DPATH_MAX=4096 \
+              -DNDEBUG -DCOLOR_5_6_5 -DENABLE_VFS_FD -DDISABLE_THREADING \
+              -I./src -I./src/arm -I./include -I./src/platform/libretro \
+              -o src/core/rewind.mingw_x86.o src/core/rewind.c
+            make -f Makefile.libretro \
+                 platform=mingw_x86 \
+                 CC=i686-w64-mingw32-gcc \
+                 CXX=i686-w64-mingw32-g++ \
+                 CFLAGS="-DDISABLE_THREADING" \
+                 -j$(nproc)
+          fi
 
       - name: Stage artifact
         run: |
           mkdir -p dist
-          cp mgba_libretro.dll dist/mgba_libretro_win32.dll
+          DLL=$(find . -name "mgba_libretro*.dll" -type f | head -1)
+          if [ -z "$DLL" ]; then
+            echo "ERROR: No DLL was built"
+            exit 1
+          fi
+          cp "$DLL" dist/mgba_libretro_win32.dll
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -182,6 +249,11 @@ jobs:
 
   # ------------------------------------------------------------------ #
   # Android — arm64-v8a / armeabi-v7a / x86_64                        #
+  #                                                                    #
+  # mGBA has a pre-existing issue with the Android NDK where           #
+  # strtof_l in src/util/formatting.c conflicts with the NDK's         #
+  # legacy_stdlib_inlines.h. We work around this by defining           #
+  # HAVE_STRTOF_L to skip the conflicting definition.                  #
   # ------------------------------------------------------------------ #
   build-android:
     name: Android ${{ matrix.abi }}
@@ -264,7 +336,11 @@ jobs:
             exit 1
           fi
 
-          # Use mGBA's dedicated Android platform target
+          # Use mGBA's dedicated Android platform target.
+          # Add -DHAVE_STRTOF_L to CFLAGS to fix the pre-existing conflict
+          # between mGBA's strtof_l definition and the NDK's
+          # legacy_stdlib_inlines.h strtof_l.
+          # Also add -DDISABLE_THREADING to skip mVideoThreadProxyCreate calls.
           make -f Makefile.libretro \
             platform=${{ matrix.platform }} \
             CC="$CC" \
@@ -272,11 +348,17 @@ jobs:
             AR="$AR" \
             RANLIB="$RANLIB" \
             STRIP="$STRIP" \
+            CFLAGS="-DHAVE_STRTOF_L -DDISABLE_THREADING" \
             -j$(nproc)
 
       - name: Stage artifact
         run: |
-          cp mgba_libretro.so mgba_libretro_${{ matrix.artifact_suffix }}.so
+          SO=$(find . -name "mgba_libretro*.so" -type f | head -1)
+          if [ -z "$SO" ]; then
+            echo "ERROR: No .so was built"
+            exit 1
+          fi
+          cp "$SO" mgba_libretro_${{ matrix.artifact_suffix }}.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
