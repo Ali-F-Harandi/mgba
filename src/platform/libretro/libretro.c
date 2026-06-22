@@ -1855,8 +1855,13 @@ static bool autoload_read_config(const char *cfg_path, autoload_config *cfg)
 static void autoload_rom_basename(char *out, size_t out_size)
 {
    const char *p    = autoload_rom_path;
+   const char *hash = strrchr(p, '#');   /* archive separator, if any */
    const char *base, *s1, *s2;
    char *dot;
+
+   if (hash)
+      p = hash + 1;                       /* skip "<archive>.zip#" */
+
    base = p;
    s1   = strrchr(p, '\\');
    s2   = strrchr(p, '/');
@@ -2155,6 +2160,9 @@ static bool cheats_find_rom_cfg(char *out, size_t out_size)
 
    {
       const char *start = autoload_rom_path;
+      const char *hash = strrchr(start, '#');   /* archive separator */
+      if (hash)
+         start = hash + 1;                       /* skip "<archive>.zip#" */
       cslash = strrchr(start, AUTOLOAD_PATH_SEP);
       strncpy(rom_base, cslash ? cslash + 1 : start, sizeof(rom_base) - 1);
       rom_base[sizeof(rom_base) - 1] = '\0';
